@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Data Viewer - UPS Event Wallet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .json-view { font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+        .tab-active { background-color: #3b82f6; color: white; }
+        .loading { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    
+    <!-- Header -->
+    <header class="bg-gray-800 p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-blue-400">📊 Firebase Data Viewer</h1>
+                <p class="text-sm text-gray-400">UPS Event Wallet Database</p>
+            </div>
+            <div class="flex gap-2">
+                <button id="btnRefresh" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium">
+                    🔄 Refresh All
+                </button>
+                <button id="btnExportAll" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium">
+                    📥 Export JSON
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="bg-yellow-600 text-center py-2 loading">
+        ⏳ Connecting to Firebase...
+    </div>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-4">
+        
+        <!-- Stats Overview -->
+        <section id="statsSection" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <p class="text-3xl font-bold text-blue-400" id="statStudents">-</p>
+                <p class="text-gray-400">Students</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <p class="text-3xl font-bold text-green-400" id="statStalls">-</p>
+                <p class="text-gray-400">Stalls</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <p class="text-3xl font-bold text-yellow-400" id="statTransactions">-</p>
+                <p class="text-gray-400">Transactions</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg text-center">
+                <p class="text-3xl font-bold text-purple-400" id="statVotes">-</p>
+                <p class="text-gray-400">Votes</p>
+            </div>
+        </section>
+
+        <!-- Tabs -->
+        <div class="flex flex-wrap gap-2 mb-4 border-b border-gray-700 pb-2">
+            <button class="tab-btn tab-active px-4 py-2 rounded-t-lg font-medium" data-tab="manage">🔧 Manage Student</button>
+            <button class="tab-btn bg-gray-700 px-4 py-2 rounded-t-lg font-medium" data-tab="students">👨‍🎓 Students</button>
+            <button class="tab-btn bg-gray-700 px-4 py-2 rounded-t-lg font-medium" data-tab="stalls">🏪 Stalls</button>
+            <button class="tab-btn bg-gray-700 px-4 py-2 rounded-t-lg font-medium" data-tab="transactions">💳 Transactions</button>
+            <button class="tab-btn bg-gray-700 px-4 py-2 rounded-t-lg font-medium" data-tab="config">⚙️ Config</button>
+            <button class="tab-btn bg-gray-700 px-4 py-2 rounded-t-lg font-medium" data-tab="votes">🗳️ Votes</button>
+            <button class="tab-btn bg-gray-700 px-4 py-2 rounded-t-lg font-medium" data-tab="raw">📄 Raw JSON</button>
+        </div>
+
+        <!-- Tab Panels -->
+        
+        <!-- NEW: Manage Student Tab -->
+        <div id="tab-manage" class="tab-panel">
+            <div class="grid md:grid-cols-2 gap-6">
+                
+                <!-- Search Student Section -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h2 class="text-xl font-bold mb-4 text-yellow-300">🔍 Search Student</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">Search by Name or ID</label>
+                            <input type="text" id="searchInput" placeholder="Enter student name or ID..." 
+                                class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg p-3">
+                        </div>
+                        <button id="btnSearch" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg">
+                            🔍 Search
+                        </button>
+                        
+                        <!-- Search Results -->
+                        <div id="searchResults" class="space-y-2 max-h-60 overflow-y-auto"></div>
+                    </div>
+                </div>
+                
+                <!-- Selected Student Details -->
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h2 class="text-xl font-bold mb-4 text-blue-300">👤 Student Details</h2>
+                    <div id="selectedStudentInfo" class="text-gray-400 text-center py-8">
+                        Search and select a student to view details
+                    </div>
+                </div>
+                
+                <!-- Add Balance Section -->
+                <div class="bg-gray-800 rounded-lg p-6 md:col-span-2">
+                    <h2 class="text-xl font-bold mb-4 text-green-300">💰 Add / Deduct Balance</h2>
+                    <div id="balanceSection" class="hidden">
+                        <div class="grid md:grid-cols-4 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">Amount (₹)</label>
+                                <input type="number" id="balanceAmount" placeholder="Enter amount" min="0"
+                                    class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg p-3 text-xl">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">Wallet Type</label>
+                                <select id="walletType" class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg p-3">
+                                    <option value="balance">Main Wallet</option>
+                                    <option value="balance_food">Food Wallet</option>
+                                    <option value="balance_games">Games Wallet</option>
+                                    <option value="balance_product">Product Wallet</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <button id="btnAddBalance" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">
+                                    ➕ Add Balance
+                                </button>
+                            </div>
+                            <div class="flex items-end">
+                                <button id="btnDeductBalance" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg">
+                                    ➖ Deduct Balance
+                                </button>
+                            </div>
+                        </div>
+                        <div id="balanceMessage" class="hidden p-4 rounded-lg text-center"></div>
+                    </div>
+                    <div id="balancePlaceholder" class="text-gray-400 text-center py-4">
+                        Select a student first to manage balance
+                    </div>
+                </div>
+                
+                <!-- Transaction History for Selected Student -->
+                <div class="bg-gray-800 rounded-lg p-6 md:col-span-2">
+                    <h2 class="text-xl font-bold mb-4 text-purple-300">📜 Student Transaction History</h2>
+                    <div id="studentTransactions" class="text-gray-400 text-center py-4">
+                        Select a student to view their transactions
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tab-students" class="tab-panel hidden">
+            <div class="bg-gray-800 rounded-lg p-4 overflow-x-auto">
+                <h2 class="text-xl font-bold mb-4 text-blue-300">All Students</h2>
+                
+                <!-- Quick Filter -->
+                <div class="mb-4">
+                    <input type="text" id="studentFilter" placeholder="Filter by name or class..." 
+                        class="w-full md:w-1/3 bg-gray-700 text-white border border-gray-600 rounded-lg p-2 text-sm">
+                </div>
+                
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="p-2">ID</th>
+                            <th class="p-2">Name</th>
+                            <th class="p-2">Class</th>
+                            <th class="p-2">Main ₹</th>
+                            <th class="p-2">Food ₹</th>
+                            <th class="p-2">Games ₹</th>
+                            <th class="p-2">Product ₹</th>
+                            <th class="p-2">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="studentsTable" class="divide-y divide-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-stalls" class="tab-panel hidden">
+            <div class="bg-gray-800 rounded-lg p-4 overflow-x-auto">
+                <h2 class="text-xl font-bold mb-4 text-green-300">All Stalls & Menus</h2>
+                <div id="stallsList" class="space-y-4"></div>
+            </div>
+        </div>
+
+        <div id="tab-transactions" class="tab-panel hidden">
+            <div class="bg-gray-800 rounded-lg p-4 overflow-x-auto">
+                <h2 class="text-xl font-bold mb-4 text-yellow-300">All Transactions</h2>
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="p-2">ID</th>
+                            <th class="p-2">Type</th>
+                            <th class="p-2">Student</th>
+                            <th class="p-2">Stall</th>
+                            <th class="p-2">Amount</th>
+                            <th class="p-2">Items</th>
+                            <th class="p-2">Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionsTable" class="divide-y divide-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-config" class="tab-panel hidden">
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-gray-800 rounded-lg p-4">
+                    <h2 class="text-xl font-bold mb-4 text-purple-300">Event Configuration</h2>
+                    <div id="configData" class="json-view bg-gray-900 p-4 rounded max-h-96 overflow-auto"></div>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4">
+                    <h2 class="text-xl font-bold mb-4 text-indigo-300">Classes</h2>
+                    <div id="classesData" class="json-view bg-gray-900 p-4 rounded max-h-96 overflow-auto"></div>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4">
+                    <h2 class="text-xl font-bold mb-4 text-pink-300">Event Info</h2>
+                    <div id="eventInfoData" class="bg-gray-900 p-4 rounded max-h-96 overflow-auto whitespace-pre-wrap"></div>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4">
+                    <h2 class="text-xl font-bold mb-4 text-orange-300">Voting Config</h2>
+                    <div id="votingConfigData" class="json-view bg-gray-900 p-4 rounded max-h-96 overflow-auto"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-votes" class="tab-panel hidden">
+            <div class="bg-gray-800 rounded-lg p-4 overflow-x-auto">
+                <h2 class="text-xl font-bold mb-4 text-pink-300">All Votes</h2>
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="p-2">Vote ID</th>
+                            <th class="p-2">Student ID</th>
+                            <th class="p-2">Category</th>
+                            <th class="p-2">Selected Option</th>
+                            <th class="p-2">Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="votesTable" class="divide-y divide-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-raw" class="tab-panel hidden">
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h2 class="text-xl font-bold mb-4 text-gray-300">Complete Raw Data (JSON)</h2>
+                <div id="rawData" class="json-view bg-gray-900 p-4 rounded max-h-[600px] overflow-auto"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, getDoc, getDocs, updateDoc, addDoc, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Same Firebase config as UPS.html
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsuWEjnrYr1g7ruvZ60ur6TADzbHkJpno",
+            authDomain: "qr-wallet-2ef48.firebaseapp.com",
+            projectId: "qr-wallet-2ef48",
+            storageBucket: "qr-wallet-2ef48.firebasestorage.app",
+            messagingSenderId: "755057942199",
+            appId: "1:755057942199:web:f5fa763b08534bcf1f3732",
+            measurementId: "G-NSLXTCC8JM"
+        };
+
+        const appId = 'my-event-wallet';
+        let db, auth;
+        let allData = {};
+
+        // Collection references
+        const usersRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'users');
+        const stallsRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'stalls');
+        const transactionsRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
+        const votesRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'votes');
+        const configRef = () => doc(db, 'artifacts', appId, 'public', 'data', 'eventConfig', 'config');
+        const classesRef = () => doc(db, 'artifacts', appId, 'public', 'data', 'eventConfig', 'classes');
+        const eventInfoRef = () => doc(db, 'artifacts', appId, 'public', 'data', 'eventConfig', 'info');
+        const votingConfigRef = () => doc(db, 'artifacts', appId, 'public', 'data', 'eventConfig', 'voting');
+        
+        let selectedStudent = null;
+
+        // Initialize
+        async function init() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                await signInAnonymously(auth);
+                
+                document.getElementById('connectionStatus').className = 'bg-green-600 text-center py-2';
+                document.getElementById('connectionStatus').textContent = '✅ Connected to Firebase';
+                
+                await loadAllData();
+                setupEventListeners();
+                
+                setTimeout(() => {
+                    document.getElementById('connectionStatus').classList.add('hidden');
+                }, 2000);
+
+            } catch (error) {
+                document.getElementById('connectionStatus').className = 'bg-red-600 text-center py-2';
+                document.getElementById('connectionStatus').textContent = '❌ Connection Failed: ' + error.message;
+                console.error(error);
+            }
+        }
+
+        async function loadAllData() {
+            allData = {
+                students: [],
+                stalls: [],
+                transactions: [],
+                votes: [],
+                config: null,
+                classes: null,
+                eventInfo: null,
+                votingConfig: null
+            };
+
+            // Load Users (Students & Stalls)
+            const usersSnap = await getDocs(usersRef());
+            usersSnap.forEach(doc => {
+                const data = { id: doc.id, ...doc.data() };
+                if (data.role === 'student') allData.students.push(data);
+            });
+
+            // Load Stalls
+            const stallsSnap = await getDocs(stallsRef());
+            stallsSnap.forEach(doc => {
+                allData.stalls.push({ id: doc.id, ...doc.data() });
+            });
+
+            // Load Transactions
+            const txnSnap = await getDocs(transactionsRef());
+            txnSnap.forEach(doc => {
+                allData.transactions.push({ id: doc.id, ...doc.data() });
+            });
+
+            // Load Votes
+            const votesSnap = await getDocs(votesRef());
+            votesSnap.forEach(doc => {
+                allData.votes.push({ id: doc.id, ...doc.data() });
+            });
+
+            // Load Config Documents
+            const configSnap = await getDoc(configRef());
+            allData.config = configSnap.exists() ? configSnap.data() : null;
+
+            const classesSnap = await getDoc(classesRef());
+            allData.classes = classesSnap.exists() ? classesSnap.data() : null;
+
+            const eventInfoSnap = await getDoc(eventInfoRef());
+            allData.eventInfo = eventInfoSnap.exists() ? eventInfoSnap.data() : null;
+
+            const votingConfigSnap = await getDoc(votingConfigRef());
+            allData.votingConfig = votingConfigSnap.exists() ? votingConfigSnap.data() : null;
+
+            // Update UI
+            renderAll();
+        }
+
+        function renderAll() {
+            // Stats
+            document.getElementById('statStudents').textContent = allData.students.length;
+            document.getElementById('statStalls').textContent = allData.stalls.length;
+            document.getElementById('statTransactions').textContent = allData.transactions.length;
+            document.getElementById('statVotes').textContent = allData.votes.length;
+
+            // Students Table
+            const studentsTable = document.getElementById('studentsTable');
+            studentsTable.innerHTML = allData.students.map(s => `
+                <tr class="hover:bg-gray-700">
+                    <td class="p-2 text-xs text-gray-400">${s.id.substring(0, 8)}...</td>
+                    <td class="p-2 font-medium">${s.name || '-'}</td>
+                    <td class="p-2">${s.class || '-'}</td>
+                    <td class="p-2 text-green-400">₹${(s.balance || 0).toFixed(2)}</td>
+                    <td class="p-2 text-orange-400">₹${(s.balance_food || 0).toFixed(2)}</td>
+                    <td class="p-2 text-purple-400">₹${(s.balance_games || 0).toFixed(2)}</td>
+                    <td class="p-2 text-teal-400">₹${(s.balance_product || 0).toFixed(2)}</td>
+                    <td class="p-2 text-xs text-gray-400">${formatTimestamp(s.createdAt)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="8" class="p-4 text-center text-gray-400">No students found</td></tr>';
+
+            // Stalls List
+            const stallsList = document.getElementById('stallsList');
+            stallsList.innerHTML = allData.stalls.map(stall => `
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h3 class="font-bold text-lg text-green-300">${stall.name || 'Unnamed Stall'}</h3>
+                            <p class="text-xs text-gray-400">ID: ${stall.id}</p>
+                            <p class="text-sm text-gray-400">Category: <span class="text-yellow-400">${stall.category || 'general'}</span></p>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <p class="text-sm text-gray-300 mb-1">Menu Items (${(stall.menu || []).length}):</p>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            ${(stall.menu || []).map(item => `
+                                <div class="bg-gray-800 p-2 rounded text-sm">
+                                    <span class="font-medium">${item.name}</span>
+                                    <span class="text-green-400 ml-2">₹${item.price}</span>
+                                    ${item.stock !== undefined ? `<span class="text-gray-400 text-xs ml-1">(${item.stock})</span>` : ''}
+                                </div>
+                            `).join('') || '<p class="text-gray-500 text-sm">No menu items</p>'}
+                        </div>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-gray-400">No stalls found</p>';
+
+            // Transactions Table
+            const transactionsTable = document.getElementById('transactionsTable');
+            const sortedTxns = [...allData.transactions].sort((a, b) => {
+                const timeA = a.timestamp?.seconds || 0;
+                const timeB = b.timestamp?.seconds || 0;
+                return timeB - timeA;
+            });
+            transactionsTable.innerHTML = sortedTxns.map(t => `
+                <tr class="hover:bg-gray-700">
+                    <td class="p-2 text-xs text-gray-400">${t.id.substring(0, 8)}...</td>
+                    <td class="p-2">
+                        <span class="px-2 py-1 rounded text-xs ${getTypeColor(t.type)}">${t.type || '-'}</span>
+                    </td>
+                    <td class="p-2">${t.studentName || t.studentId?.substring(0, 8) || '-'}</td>
+                    <td class="p-2">${t.stallName || '-'}</td>
+                    <td class="p-2 ${t.type === 'purchase' ? 'text-red-400' : 'text-green-400'}">
+                        ${t.type === 'purchase' ? '-' : '+'}₹${(t.amount || 0).toFixed(2)}
+                    </td>
+                    <td class="p-2 text-xs">${(t.items || []).map(i => i.name).join(', ') || '-'}</td>
+                    <td class="p-2 text-xs text-gray-400">${formatTimestamp(t.timestamp)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="7" class="p-4 text-center text-gray-400">No transactions found</td></tr>';
+
+            // Config Data
+            document.getElementById('configData').textContent = JSON.stringify(allData.config, null, 2) || 'No config data';
+            document.getElementById('classesData').textContent = JSON.stringify(allData.classes, null, 2) || 'No classes data';
+            document.getElementById('eventInfoData').textContent = allData.eventInfo?.content || 'No event info';
+            document.getElementById('votingConfigData').textContent = JSON.stringify(allData.votingConfig, null, 2) || 'No voting config';
+
+            // Votes Table
+            const votesTable = document.getElementById('votesTable');
+            votesTable.innerHTML = allData.votes.map(v => `
+                <tr class="hover:bg-gray-700">
+                    <td class="p-2 text-xs text-gray-400">${v.id.substring(0, 8)}...</td>
+                    <td class="p-2 text-xs">${v.studentId?.substring(0, 12) || '-'}...</td>
+                    <td class="p-2">${v.categoryId || '-'}</td>
+                    <td class="p-2 text-pink-400">${v.selectedOption || '-'}</td>
+                    <td class="p-2 text-xs text-gray-400">${formatTimestamp(v.timestamp)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" class="p-4 text-center text-gray-400">No votes found</td></tr>';
+
+            // Raw JSON
+            document.getElementById('rawData').textContent = JSON.stringify(allData, null, 2);
+        }
+
+        function formatTimestamp(ts) {
+            if (!ts) return '-';
+            if (ts.seconds) {
+                return new Date(ts.seconds * 1000).toLocaleString();
+            }
+            return ts.toString();
+        }
+
+        function getTypeColor(type) {
+            switch(type) {
+                case 'purchase': return 'bg-red-600';
+                case 'recharge': return 'bg-green-600';
+                case 'refund': return 'bg-yellow-600';
+                case 'cashout': return 'bg-orange-600';
+                default: return 'bg-gray-600';
+            }
+        }
+
+        function setupEventListeners() {
+            // Tab switching
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => {
+                        b.classList.remove('tab-active');
+                        b.classList.add('bg-gray-700');
+                    });
+                    btn.classList.add('tab-active');
+                    btn.classList.remove('bg-gray-700');
+
+                    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+                    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+                };
+            });
+
+            // Refresh button
+            document.getElementById('btnRefresh').onclick = async () => {
+                document.getElementById('btnRefresh').textContent = '⏳ Loading...';
+                await loadAllData();
+                document.getElementById('btnRefresh').textContent = '🔄 Refresh All';
+            };
+
+            // Export JSON
+            document.getElementById('btnExportAll').onclick = () => {
+                const dataStr = JSON.stringify(allData, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ups_event_data_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+            
+            // Search Student
+            document.getElementById('btnSearch').onclick = searchStudent;
+            document.getElementById('searchInput').onkeypress = (e) => {
+                if (e.key === 'Enter') searchStudent();
+            };
+            
+            // Add/Deduct Balance
+            document.getElementById('btnAddBalance').onclick = () => modifyBalance('add');
+            document.getElementById('btnDeductBalance').onclick = () => modifyBalance('deduct');
+            
+            // Student Filter in table
+            document.getElementById('studentFilter').oninput = filterStudentsTable;
+        }
+        
+        // ========== STUDENT SEARCH ==========
+        function searchStudent() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            if (!query) {
+                document.getElementById('searchResults').innerHTML = '<p class="text-gray-400">Please enter a search term</p>';
+                return;
+            }
+            
+            const results = allData.students.filter(s => 
+                s.name?.toLowerCase().includes(query) || 
+                s.id?.toLowerCase().includes(query) ||
+                s.class?.toLowerCase().includes(query)
+            );
+            
+            const resultsEl = document.getElementById('searchResults');
+            
+            if (results.length === 0) {
+                resultsEl.innerHTML = '<p class="text-red-400">No students found</p>';
+                return;
+            }
+            
+            resultsEl.innerHTML = results.map(s => `
+                <button class="search-result-btn w-full text-left bg-gray-700 hover:bg-gray-600 p-3 rounded-lg flex justify-between items-center" data-id="${s.id}">
+                    <div>
+                        <span class="font-medium text-white">${s.name}</span>
+                        <span class="text-sm text-gray-400 ml-2">(${s.class || 'N/A'})</span>
+                    </div>
+                    <span class="text-green-400 font-bold">₹${(s.balance || 0).toFixed(2)}</span>
+                </button>
+            `).join('');
+            
+            // Attach click handlers
+            document.querySelectorAll('.search-result-btn').forEach(btn => {
+                btn.onclick = () => selectStudent(btn.dataset.id);
+            });
+        }
+        
+        // ========== SELECT STUDENT ==========
+        function selectStudent(studentId) {
+            selectedStudent = allData.students.find(s => s.id === studentId);
+            if (!selectedStudent) return;
+            
+            // Highlight selected in search results
+            document.querySelectorAll('.search-result-btn').forEach(btn => {
+                btn.classList.remove('ring-2', 'ring-blue-500');
+                if (btn.dataset.id === studentId) btn.classList.add('ring-2', 'ring-blue-500');
+            });
+            
+            // Show student details
+            const infoEl = document.getElementById('selectedStudentInfo');
+            infoEl.innerHTML = `
+                <div class="space-y-4">
+                    <div class="text-center">
+                        <p class="text-2xl font-bold text-white">${selectedStudent.name}</p>
+                        <p class="text-gray-400">Class: ${selectedStudent.class || 'N/A'}</p>
+                        <p class="text-xs text-gray-500 mt-1">ID: ${selectedStudent.id}</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3 mt-4">
+                        <div class="bg-gray-700 p-3 rounded-lg text-center">
+                            <p class="text-xs text-gray-400">Main Balance</p>
+                            <p class="text-2xl font-bold text-green-400">₹${(selectedStudent.balance || 0).toFixed(2)}</p>
+                        </div>
+                        <div class="bg-gray-700 p-3 rounded-lg text-center">
+                            <p class="text-xs text-gray-400">Food Wallet</p>
+                            <p class="text-xl font-bold text-orange-400">₹${(selectedStudent.balance_food || 0).toFixed(2)}</p>
+                        </div>
+                        <div class="bg-gray-700 p-3 rounded-lg text-center">
+                            <p class="text-xs text-gray-400">Games Wallet</p>
+                            <p class="text-xl font-bold text-purple-400">₹${(selectedStudent.balance_games || 0).toFixed(2)}</p>
+                        </div>
+                        <div class="bg-gray-700 p-3 rounded-lg text-center">
+                            <p class="text-xs text-gray-400">Product Wallet</p>
+                            <p class="text-xl font-bold text-teal-400">₹${(selectedStudent.balance_product || 0).toFixed(2)}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-900/30 p-3 rounded-lg text-center">
+                        <p class="text-xs text-gray-400">Total Balance</p>
+                        <p class="text-3xl font-bold text-blue-400">₹${(
+                            (selectedStudent.balance || 0) + 
+                            (selectedStudent.balance_food || 0) + 
+                            (selectedStudent.balance_games || 0) + 
+                            (selectedStudent.balance_product || 0)
+                        ).toFixed(2)}</p>
+                    </div>
+                </div>
+            `;
+            
+            // Show balance section
+            document.getElementById('balanceSection').classList.remove('hidden');
+            document.getElementById('balancePlaceholder').classList.add('hidden');
+            
+            // Load student transactions
+            loadStudentTransactions(studentId);
+        }
+        
+        // ========== LOAD STUDENT TRANSACTIONS ==========
+        function loadStudentTransactions(studentId) {
+            const studentTxns = allData.transactions.filter(t => t.studentId === studentId);
+            const txnEl = document.getElementById('studentTransactions');
+            
+            if (studentTxns.length === 0) {
+                txnEl.innerHTML = '<p class="text-gray-400 text-center py-4">No transactions found for this student</p>';
+                return;
+            }
+            
+            // Sort by timestamp (newest first)
+            studentTxns.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+            
+            txnEl.innerHTML = `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-700">
+                            <tr>
+                                <th class="p-2">Type</th>
+                                <th class="p-2">Amount</th>
+                                <th class="p-2">Stall</th>
+                                <th class="p-2">Items</th>
+                                <th class="p-2">Wallet</th>
+                                <th class="p-2">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700">
+                            ${studentTxns.map(t => `
+                                <tr class="hover:bg-gray-700">
+                                    <td class="p-2">
+                                        <span class="px-2 py-1 rounded text-xs ${getTypeColor(t.type)}">${t.type || '-'}</span>
+                                    </td>
+                                    <td class="p-2 ${t.type === 'purchase' || t.type === 'cashout' ? 'text-red-400' : 'text-green-400'} font-bold">
+                                        ${t.type === 'purchase' || t.type === 'cashout' ? '-' : '+'}₹${(t.amount || 0).toFixed(2)}
+                                    </td>
+                                    <td class="p-2">${t.stallName || '-'}</td>
+                                    <td class="p-2 text-xs">${(t.items || []).map(i => i.name).join(', ') || '-'}</td>
+                                    <td class="p-2 text-xs text-gray-400">${t.walletType || 'balance'}</td>
+                                    <td class="p-2 text-xs text-gray-400">${formatTimestamp(t.timestamp)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        // ========== MODIFY BALANCE ==========
+        async function modifyBalance(action) {
+            if (!selectedStudent) {
+                showBalanceMessage('Please select a student first', 'red');
+                return;
+            }
+            
+            const amountInput = document.getElementById('balanceAmount');
+            const amount = parseFloat(amountInput.value);
+            const walletType = document.getElementById('walletType').value;
+            
+            if (!amount || amount <= 0) {
+                showBalanceMessage('Please enter a valid amount', 'red');
+                return;
+            }
+            
+            const currentBalance = selectedStudent[walletType] || 0;
+            
+            // Check if deducting more than available
+            if (action === 'deduct' && amount > currentBalance) {
+                showBalanceMessage(`Insufficient balance. Current ${walletType}: ₹${currentBalance.toFixed(2)}`, 'red');
+                return;
+            }
+            
+            const finalAmount = action === 'add' ? amount : -amount;
+            
+            try {
+                // Update user document
+                const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', selectedStudent.id);
+                await updateDoc(userDocRef, {
+                    [walletType]: increment(finalAmount)
+                });
+                
+                // Create transaction record
+                const txnData = {
+                    studentId: selectedStudent.id,
+                    studentName: selectedStudent.name,
+                    type: action === 'add' ? 'recharge' : 'cashout',
+                    amount: amount,
+                    walletType: walletType,
+                    timestamp: serverTimestamp(),
+                    adminAction: true
+                };
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), txnData);
+                
+                // Update local state
+                selectedStudent[walletType] = currentBalance + finalAmount;
+                const studentIndex = allData.students.findIndex(s => s.id === selectedStudent.id);
+                if (studentIndex !== -1) {
+                    allData.students[studentIndex] = { ...selectedStudent };
+                }
+                
+                // Add to local transactions
+                allData.transactions.unshift({ id: 'new-' + Date.now(), ...txnData, timestamp: { seconds: Date.now() / 1000 } });
+                
+                // Refresh UI
+                selectStudent(selectedStudent.id);
+                renderAll();
+                
+                showBalanceMessage(
+                    `Successfully ${action === 'add' ? 'added' : 'deducted'} ₹${amount.toFixed(2)} ${action === 'add' ? 'to' : 'from'} ${walletType.replace('_', ' ')}`,
+                    'green'
+                );
+                
+                amountInput.value = '';
+                
+            } catch (error) {
+                console.error('Balance update error:', error);
+                showBalanceMessage('Error: ' + error.message, 'red');
+            }
+        }
+        
+        function showBalanceMessage(message, color) {
+            const msgEl = document.getElementById('balanceMessage');
+            msgEl.textContent = message;
+            msgEl.className = `p-4 rounded-lg text-center bg-${color}-600/30 text-${color}-300`;
+            msgEl.classList.remove('hidden');
+            setTimeout(() => msgEl.classList.add('hidden'), 4000);
+        }
+        
+        // ========== FILTER STUDENTS TABLE ==========
+        function filterStudentsTable() {
+            const query = document.getElementById('studentFilter').value.toLowerCase();
+            const rows = document.querySelectorAll('#studentsTable tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        }
+
+        // Start
+        init();
+    </script>
+
+</body>
+</html>
